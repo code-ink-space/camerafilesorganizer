@@ -1,25 +1,32 @@
 <?php
 /*
- * PHP CLI script to organize camera pictures and videos
- * sort camera file by date folders: 2022 > 2022-01 > 2022-01-02
- * specifically for NIKON cameras: DSC_XXXX.JPG/MOV
+ * PHP CLI script to organize camera files
+ * move files into date folders: 2022 > 2022-01 > 2022-01-02
+ * specifically for NIKON cameras: DSC_XXXX.JPG
+ * reads EXIF DateTimeOriginal
  *
- * with --dry-run option levels:
+ * with dry-run option levels:
  * 1 = no mkdir, chmod or move is done. just shows old and new paths
  * 2 = everything done except actually moving the file
  *
- * logs output summary to text file and details to CSV file
+ * logs output summary to text file and details, messages to CSV files
+ *
+ * @todo: MOV video files, NEF raw files
  */
+define('TEST_MODE', 0);
+if (TEST_MODE)
+	print "\n -- TEST MODE: process first file only\n";
 
-// define('DRY_RUN', true);
+define('START_TIME', date("Y-m-d H:i:s"));
+
 askDryRun();
 if (DRY_RUN) {
-	// define('DRY_RUN_LEVEL', 1);
 	askDryRunLevel();
+} else {
+	define('DRY_RUN_LEVEL', 0);
 }
-$paths_arr = askPaths();
-print_r($paths_arr);
 
+$paths_arr = askPaths();
 if (!validatePaths($paths_arr)) {
 	exit();
 } else {
@@ -28,33 +35,29 @@ if (!validatePaths($paths_arr)) {
 
 // camera files absolute path to import
 define('SRC_PATH', $paths_arr[0]);
-
 // camera files absolute path destination, where YEAR folder will go under
 define('DEST_PATH', $paths_arr[1]);
 
-// fetch into array .JPG, .MOV and .NEF filenames in src folder
+// fetch into array .JPG filenames in src folder
 $file_array = array();
-
 foreach (glob(SRC_PATH.'/*.{JPG}', GLOB_BRACE) as $filename) {
 	array_push($file_array, $filename);
 }
 
-$GLOBALS['summary_arr'] = array();
-$GLOBALS['details_arr'] = array();
-
-print_r($file_array);
+$GLOBALS['summary_arr'] = $GLOBALS['details_arr'] = $GLOBALS['messages_arr'] = array();
+$GLOBALS['success_count'] = $GLOBALS['error_count'] = 0;
 
 processFiles($file_array);
+csvLogger($GLOBALS['details_arr'], 'details.csv');
+logSummary();
 
-// print_r($GLOBALS['details_arr']);
-
-csvLogger($GLOBALS['details_arr']);
-
-exit();
-
+print "\n -- " . FILE_COUNT . " file(s) found.\n";
+print "\n -- Moved {$GLOBALS['success_count']} file(s).\n";
+print "\n -- DONE!\n";
 
 function processFiles($file_array = array()) {
-	for ($i = 0; $i < count($file_array); $i++) {
+	define('FILE_COUNT', count($file_array));
+	for ($i = 0; $i < FILE_COUNT; $i++) {
 		$arr_detail = array();
 		$oldfile_path = $file_array[$i];
 		$filename = basename($file_array[$i]);
@@ -63,25 +66,21 @@ function processFiles($file_array = array()) {
 		$filesize_pretty = formatFileSize(filesize($oldfile_path));
 
 		if ($filetype == 'JPG') {
-			// parse EXIF DateTimeOriginal
 			$photo_datetime = getDateTimeOriginal($oldfile_path);
-			$pdt_arr = explode(' ', $photo_datetime);
-			list($pic_year, $pic_month, $pic_day) = explode(':', $pdt_arr[0]);
-			$photo_ymd = implode('-', array($pic_year, $pic_month, $pic_day));
+			if ($photo_datetime) {
+				$pdt_arr = explode(' ', $photo_datetime);
+				list($pic_year, $pic_month, $pic_day) = explode(':', $pdt_arr[0]);
+				$photo_ymd = implode('-', array($pic_year, $pic_month, $pic_day));
+			} else {
+				continue;
+			}
 		}
 
-		// sort camera file by date folders: 2022 > 2022-01 > 2022-01-02
 		$newdest_path = DEST_PATH . '/' . $pic_year . '/' . $pic_year . '-' . $pic_month . '/' . $pic_year . '-' . $pic_month . '-' . $pic_day;
 		$newfile_path = $newdest_path . '/' . $filename;
-		/*if (createFolders($newdest_path)) {
-			if (!moveFile($oldfile_path, $newfile_path)){
-				// failed to move file or DRY_RUN skipped it
-			} else {
-				// success move!
-			}
-		} else {
-			// directory access failure or skipped mkdir, chmod
-		}*/
+		if (createFolders($newdest_path)) {
+			moveFile($oldfile_path, $newfile_path);
+		}
 
 		$arr_detail = array(
 			$filename,
@@ -94,6 +93,50 @@ function processFiles($file_array = array()) {
 			$filesize
 		);
 		logDetail($arr_detail);
+
+		if (TEST_MODE)
+			break;
+	}
+}
+
+function createFolders($path) {
+	if (pathExists($path)) {
+		if (!makePathWritable($path)) {
+			return false;
+		} else {
+			logMsg($path, 'path is good');
+			return true;
+		}
+	} else {
+		if (!DRY_RUN || DRY_RUN_LEVEL != 1) {
+			if (!mkdir($path, 0755, true)) {
+				logMsg($path, 'failed to create directories', 'error');
+				return false;
+			} else {
+				logMsg($path, 'mkdir success');
+				return true;
+			}
+		} else {
+			logMsg($path, 'skip mkdir on DRY_RUN_LEVEL 1');
+			return false;
+		}
+	}
+}
+
+function moveFile($old_path, $new_path) {
+	if (!DRY_RUN) {
+		if (!rename($old_path, $new_path)) {
+			logMsg($new_path, 'failed to move file to this location', 'error');
+			return false;
+		} else {
+			logMsg($new_path, 'Successfully moved file.');
+			$GLOBALS['success_count']++;
+			return true;
+		}
+		return false;
+	} else {
+		logMsg($new_path, 'skip move file on DRY-RUN');
+		return false;
 	}
 }
 
@@ -107,34 +150,21 @@ function formatFileSize($filesize = 0) {
 }
 
 function getDateTimeOriginal($file_path = '') {
-	$photo_date = false;
-
-	// Open a the file, this should be in binary mode
 	$fp = fopen($file_path, 'rb');
-
 	if (!$fp) {
-	    echo 'Error: Unable to open image for reading';
-	    exit;
+	    logMsg($file_path, 'unable to open image for reading', 'error');
+	    return false;
 	}
-
-	// Attempt to read the exif headers
 	$headers = exif_read_data($fp, 'EXIF', $as_arrays = true);
-
 	if (!$headers) {
-	    echo 'Error: Unable to read exif headers';
-	    exit;
+	    logMsg($file_path, 'unable to read EXIF headers', 'error');
+	    return false;
 	}
-
-	// Print the 'COMPUTED' headers
-	// echo 'EXIF Headers:' . PHP_EOL;
-
 	foreach ($headers['EXIF'] as $header => $value) {
-	    // printf(' %s => %s%s', $header, $value, PHP_EOL);
 	    if ($header == 'DateTimeOriginal') // DateTimeOriginal => 2022:01:22 19:34:55
-	    	$photo_date = $value;
+	    	return $value;
 	}
-
-	return $photo_date;
+	return false;
 }
 
 function pathExists($path) {
@@ -152,14 +182,17 @@ function makePathWritable($path, $mode = 'regular') {
 			if (!DRY_RUN && DRY_RUN_LEVEL != 1) {
 				// try change directory permissions
 				if (!chmod($path, 0755)) {
-					print "\n -- Path Error: $path -- Failed to change permissions.\n";
+					// print "\n -- Path Error: $path -- Failed to change permissions.\n";
+					logMsg($path, 'chmod failed to change permissions', 'error');
 					return false;
 				}
 			} else {
-				print "\n -- Path: $path -- Skipping chmod for DRY_RUN_LEVEL 1\n";
+				// print "\n -- Path: $path -- Skipping chmod for DRY_RUN_LEVEL 1\n";
+				logMsg($path, 'skip chmod on DRY_RUN_LEVEL 1');
 				return false; // skip chmod for DRY_RUN_LEVEL 1
 			}
 		} else { // i.e. validate_only
+			logMsg($path, 'skipped chmod');
 			return false;
 		}
 	}
@@ -234,6 +267,7 @@ function askDryRunLevel() {
 
 function askPaths() {
 	$paths_arr = array();
+	print "\nEnter absolute paths.\n";
 	do {
 		$input = trim(readline("\n> Source Path: "));
 		readline_add_history($input);
@@ -249,15 +283,43 @@ function askPaths() {
 	return $paths_arr;
 }
 
+function logMsg($item = '', $message = '', $type = 'info') {
+	array_push($GLOBALS['messages_arr'], array($item, $type, $message));
+	if ($type == 'error')
+		$GLOBALS['error_count']++;
+}
+
 function logDetail($arr = array()) {
 	array_push($GLOBALS['details_arr'], $arr);
 }
 
-function csvLogger($arr = array()) {
-	$csvfile = fopen('details.csv', 'w');
+function csvLogger($arr = array(), $filename = 'output.csv') {
+	$csvfile = fopen($filename, 'w');
 	foreach ($arr as $line) {
 		fputcsv($csvfile, $line);
 	}
 	fclose($csvfile);
 }
 
+function logSummary() {
+	list($start, $src, $dest, $dryrun, $level, $file_count) = array(
+		START_TIME, SRC_PATH, DEST_PATH,
+		!DRY_RUN ? 'No' : 'Yes',
+		!DRY_RUN ? '0' : DRY_RUN_LEVEL,
+		FILE_COUNT
+	);
+	$end = date("Y-m-d H:i:s");
+	$summary = <<<SUMMARY
+Start Time: {$start}\n
+End Time: {$end}\n
+Source: {$src}\n
+Destination: {$dest}\n
+Dry-Run? {$dryrun}\n
+Dry-Run Level: {$level}\n
+File to Process: {$file_count}\n
+Files Moved: {$GLOBALS['success_count']}\n
+Errors: {$GLOBALS['error_count']}\n
+SUMMARY;
+	file_put_contents('summary.txt', $summary);
+	csvLogger($GLOBALS['messages_arr'], 'messages.csv');
+}

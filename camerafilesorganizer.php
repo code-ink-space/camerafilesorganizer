@@ -2,7 +2,7 @@
 /*
  * PHP CLI script to organize camera files
  * move files into date folders: 2022 > 2022-01 > 2022-01-02
- * specifically for NIKON cameras: DSC_XXXX.JPG
+ * specifically for NIKON cameras: DSC_XXXX.JPG/NEF
  * reads EXIF DateTimeOriginal
  *
  * with dry-run option levels:
@@ -367,8 +367,8 @@ function csvLogger($arr = array(), $filename = 'output.csv') {
 }
 
 function logSummary() {
-	list($start, $src, $dest, $dryrun, $level, $file_count) = array(
-		START_TIME, SRC_PATH, DEST_PATH,
+	list($start, $file_type, $src, $dest, $dryrun, $level, $file_count) = array(
+		START_TIME, FILE_TYPE, SRC_PATH, DEST_PATH,
 		!DRY_RUN ? 'No' : 'Yes',
 		!DRY_RUN ? '0' : DRY_RUN_LEVEL,
 		FILE_COUNT
@@ -377,6 +377,7 @@ function logSummary() {
 	$summary = <<<SUMMARY
 Start Time: {$start}\n
 End Time: {$end}\n
+File Type: {$file_type}\n
 Source: {$src}\n
 Destination: {$dest}\n
 Dry-Run? {$dryrun}\n

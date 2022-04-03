@@ -125,7 +125,10 @@ function createFolders($path) {
 
 function moveFile($old_path, $new_path) {
 	if (!DRY_RUN) {
-		if (!rename($old_path, $new_path)) {
+		if (file_exists($new_path)) {
+			logMsg($new_path, 'file already exists', 'error');
+			return false;
+		} else if (!rename($old_path, $new_path)) {
 			logMsg($new_path, 'failed to move file to this location', 'error');
 			return false;
 		} else {
@@ -275,7 +278,7 @@ function askPaths() {
 			array_push($paths_arr, rtrim($input, '/'));
 	} while ( strlen(trim($input)) == 0 );
 	do {
-		$input = trim(readline("\n> Destination Path: "));
+		$input = trim(readline("\n> Destination Path (YEAR folder will go under this): "));
 		readline_add_history($input);
 		if (strlen(trim($input)) > 0)
 			array_push($paths_arr, rtrim($input, '/'));

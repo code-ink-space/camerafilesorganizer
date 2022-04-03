@@ -11,13 +11,14 @@
  *
  * logs output summary to text file and details, messages to CSV files
  *
- * @todo: MOV video files, NEF raw files
+ * @todo: MOV video files
  */
 define('TEST_MODE', 0);
 if (TEST_MODE)
 	print "\n -- TEST MODE: process first file only\n";
 
-define('DEFAULT_DESTINATION', '/run/media/patrick/522F45591CD4028B/NIKON/');
+define('DEFAULT_DESTINATION', '');
+define('DEFAULT_DESTINATION_NEF', '');
 
 define('START_TIME', date("Y-m-d H:i:s"));
 
@@ -27,6 +28,8 @@ if (DRY_RUN) {
 } else {
 	define('DRY_RUN_LEVEL', 0);
 }
+
+askFileType();
 
 $paths_arr = askPaths();
 if (!validatePaths($paths_arr)) {
@@ -40,9 +43,9 @@ define('SRC_PATH', $paths_arr[0]);
 // camera files absolute path destination, where YEAR folder will go under
 define('DEST_PATH', $paths_arr[1]);
 
-// fetch into array .JPG filenames in src folder
+// fetch into array select filenames in src folder
 $file_array = array();
-foreach (glob(SRC_PATH.'/*.{JPG}', GLOB_BRACE) as $filename) {
+foreach (glob(SRC_PATH.'/*.{'.FILE_TYPE.'}', GLOB_BRACE) as $filename) {
 	array_push($file_array, $filename);
 }
 
@@ -67,15 +70,13 @@ function processFiles($file_array = array()) {
 		$filesize = filesize($oldfile_path);
 		$filesize_pretty = formatFileSize(filesize($oldfile_path));
 
-		if ($filetype == 'JPG') {
-			$photo_datetime = getDateTimeOriginal($oldfile_path);
-			if ($photo_datetime) {
-				$pdt_arr = explode(' ', $photo_datetime);
-				list($pic_year, $pic_month, $pic_day) = explode(':', $pdt_arr[0]);
-				$photo_ymd = implode('-', array($pic_year, $pic_month, $pic_day));
-			} else {
-				continue;
-			}
+		$photo_datetime = getDateTimeOriginal($oldfile_path);
+		if ($photo_datetime) {
+			$pdt_arr = explode(' ', $photo_datetime);
+			list($pic_year, $pic_month, $pic_day) = explode(':', $pdt_arr[0]);
+			$photo_ymd = implode('-', array($pic_year, $pic_month, $pic_day));
+		} else {
+			continue;
 		}
 
 		$newdest_path = DEST_PATH . '/' . $pic_year . '/' . $pic_year . '-' . $pic_month . '/' . $pic_year . '-' . $pic_month . '-' . $pic_day;
@@ -160,7 +161,8 @@ function getDateTimeOriginal($file_path = '') {
 	    logMsg($file_path, 'unable to open image for reading', 'error');
 	    return false;
 	}
-	$headers = exif_read_data($fp, 'EXIF', $as_arrays = true);
+	// not the best solution but works for me, see https://stackoverflow.com/q/5184748
+	$headers = @exif_read_data($fp, 'EXIF', $as_arrays = true);
 	if (!$headers) {
 	    logMsg($file_path, 'unable to read EXIF headers', 'error');
 	    return false;
@@ -171,6 +173,25 @@ function getDateTimeOriginal($file_path = '') {
 	}
 	return false;
 }
+
+/*function getDateTimeOriginalNEF($file_path = '') {
+	$fp = fopen($file_path, 'rb');
+	if (!$fp) {
+	    logMsg($file_path, 'unable to open image for reading', 'error');
+	    return false;
+	}
+	$img = new Imagick($file_path);
+	$allProp = $img->getImageProperties();
+	$exifProp = $img->getImageProperties("exif:*");
+	print_r($allProp);
+
+	if(isset($exifProp['exif:DateTimeOriginal'])) {
+		return $exifProp['exif:DateTimeOriginal'];
+	} else {
+		logMsg($file_path, 'unable to read NEF EXIF DateTimeOriginal', 'error');
+	    return false;
+	}
+}*/
 
 function pathExists($path) {
 	if (file_exists($path) && is_dir($path))
@@ -270,6 +291,26 @@ function askDryRunLevel() {
 	} while ( !in_array($input, array('1', '2')) );
 }
 
+function askFileType() {
+	do {
+		$input = trim(strtolower( readline("\n> File Type? (j = JPEG, n = NEF) ") ));
+		readline_add_history($input);
+		switch ($input) {
+			case 'j':
+				define('FILE_TYPE', 'JPG');
+				print "\n -- searching JPEG files\n";
+				break;
+			case 'n':
+				define('FILE_TYPE', 'NEF');
+				print "\n -- searching NEF files\n";
+				break;
+			default:
+				print "\n -- please select: j = JPEG, n = NEF\n";
+				break;
+		}
+	} while ( !in_array($input, array('j', 'n')) );
+}
+
 function askPaths() {
 	$paths_arr = array();
 	print "\nEnter absolute paths.\n";
@@ -280,13 +321,18 @@ function askPaths() {
 			array_push($paths_arr, rtrim($input, '/'));
 	} while ( strlen(trim($input)) == 0 );
 
-	if (strlen(trim(DEFAULT_DESTINATION)) > 0) {
-		print "\n -- DEFAULT DESTINATION: " . DEFAULT_DESTINATION;
+	if (FILE_TYPE == 'NEF')
+		$def_dest = DEFAULT_DESTINATION_NEF;
+	else
+		$def_dest = DEFAULT_DESTINATION;
+
+	if (strlen(trim($def_dest)) > 0) {
+		print "\n -- DEFAULT DESTINATION: " . $def_dest;
 		$input = trim(strtolower( readline("\n> Use Default? (y/n) ") ));
 		readline_add_history($input);
 		switch ($input) {
 			case 'y':
-				array_push($paths_arr, rtrim(DEFAULT_DESTINATION, '/'));
+				array_push($paths_arr, rtrim($def_dest, '/'));
 				return $paths_arr;
 			default:
 				break;

@@ -17,6 +17,8 @@ define('TEST_MODE', 0);
 if (TEST_MODE)
 	print "\n -- TEST MODE: process first file only\n";
 
+define('DEFAULT_DESTINATION', '/run/media/patrick/522F45591CD4028B/NIKON/');
+
 define('START_TIME', date("Y-m-d H:i:s"));
 
 askDryRun();
@@ -51,12 +53,12 @@ processFiles($file_array);
 csvLogger($GLOBALS['details_arr'], 'details.csv');
 logSummary();
 
-print "\n -- " . FILE_COUNT . " file(s) found.\n";
 print "\n -- Moved {$GLOBALS['success_count']} file(s).\n";
 print "\n -- DONE!\n";
 
 function processFiles($file_array = array()) {
 	define('FILE_COUNT', count($file_array));
+	print "\n -- Processing " . FILE_COUNT . " file(s)...";
 	for ($i = 0; $i < FILE_COUNT; $i++) {
 		$arr_detail = array();
 		$oldfile_path = $file_array[$i];
@@ -277,6 +279,20 @@ function askPaths() {
 		if (strlen(trim($input)) > 0)
 			array_push($paths_arr, rtrim($input, '/'));
 	} while ( strlen(trim($input)) == 0 );
+
+	if (strlen(trim(DEFAULT_DESTINATION)) > 0) {
+		print "\n -- DEFAULT DESTINATION: " . DEFAULT_DESTINATION;
+		$input = trim(strtolower( readline("\n> Use Default? (y/n) ") ));
+		readline_add_history($input);
+		switch ($input) {
+			case 'y':
+				array_push($paths_arr, rtrim(DEFAULT_DESTINATION, '/'));
+				return $paths_arr;
+			default:
+				break;
+		}
+	}
+
 	do {
 		$input = trim(readline("\n> Destination Path (YEAR folder will go under this): "));
 		readline_add_history($input);

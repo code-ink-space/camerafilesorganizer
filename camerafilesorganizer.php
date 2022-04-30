@@ -1,6 +1,6 @@
 <?php
 /*
- * PHP CLI script to organize camera files
+ * PHP CLI interactive script for Linux to organize camera files
  * move files into date folders: 2022 > 2022-01 > 2022-01-02
  * specifically for NIKON cameras: DSC_XXXX.JPG/NEF
  * reads EXIF DateTimeOriginal

@@ -70,11 +70,12 @@ function processFiles($file_array = array()) {
 		$filesize = filesize($oldfile_path);
 		$filesize_pretty = formatFileSize(filesize($oldfile_path));
 
-		$photo_datetime = getDateTimeOriginal($oldfile_path);
+		$photo_datetime = getDateTimeOriginal($oldfile_path); // 2022:01:22 19:34:55
 		if ($photo_datetime) {
 			$pdt_arr = explode(' ', $photo_datetime);
 			list($pic_year, $pic_month, $pic_day) = explode(':', $pdt_arr[0]);
 			$photo_ymd = implode('-', array($pic_year, $pic_month, $pic_day));
+			$photo_datetime_formatted = $photo_ymd . ' ' . $pdt_arr[1]; // 2022-04-26 09:23:40
 		} else {
 			continue;
 		}
@@ -82,7 +83,7 @@ function processFiles($file_array = array()) {
 		$newdest_path = DEST_PATH . '/' . $pic_year . '/' . $pic_year . '-' . $pic_month . '/' . $pic_year . '-' . $pic_month . '-' . $pic_day;
 		$newfile_path = $newdest_path . '/' . $filename;
 		if (createFolders($newdest_path)) {
-			moveFile($oldfile_path, $newfile_path);
+			moveFile($oldfile_path, $newfile_path, $photo_datetime_formatted);
 		}
 
 		$arr_detail = array(
@@ -126,7 +127,7 @@ function createFolders($path) {
 	}
 }
 
-function moveFile($old_path, $new_path) {
+function moveFile($old_path, $new_path, $photo_datetime_formatted) {
 	if (!DRY_RUN) {
 		if (file_exists($new_path)) {
 			logMsg($new_path, 'file already exists', 'error');
@@ -135,6 +136,9 @@ function moveFile($old_path, $new_path) {
 			logMsg($new_path, 'failed to move file to this location', 'error');
 			return false;
 		} else {
+			// set file modified date to the photo's original date
+			exec('touch -m -d "' . $photo_datetime_formatted . '" ' . $new_path);
+
 			logMsg($new_path, 'Successfully moved file.');
 			$GLOBALS['success_count']++;
 			return true;
